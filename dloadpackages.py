@@ -2,9 +2,11 @@ from bs4 import BeautifulSoup
 import requests
 import sys
 import re
+from subprocess import call
+from termcolor import colored 
 
 dependent_packages = set()
-debug_level = 1
+debug_level = 0
 
 def printdebug(*args): 
 	'''
@@ -38,9 +40,9 @@ def getPackageUrl(packagename, arch = 'amd64'):
 		result = soup.body.div.ul.li.a['href']
 		return result
 	except AttributeError: 
-		printdebug(1, 'could not get package-url for %s' % packagename)
+		print(colored('could not get package-url for %s' % packagename, 'red'))
 	except: 
-		printdebug(1, 'no result for %s' % packagename)
+		print(colored('no result for %s' % packagename, 'red'))
     
 
 def getDependentPackages(packagename): 
@@ -75,12 +77,12 @@ def getRecursiveDepPackages(packagename, init=True):
 	'''
 	all_packages = set([packagename])
 	newFilesThere = True
-	#start_index = 0
-	#len_packages = 0
+	start_index = 0
+	len_packages = 0
 	while newFilesThere: 
-		#search_packages = list(all_packages)[start_index:]
-		# len_all_packages = len(all_packages)
-		for p in list(all_packages): 
+		search_packages = list(all_packages)[start_index:]
+		len_all_packages = len(all_packages)
+		for p in search_packages: 
 			packages = getDependentPackages(p)
 			#len_packages = len_packages
 			printdebug(1, 'getRecursiveDepPackages: packages = ', packages)
@@ -89,6 +91,7 @@ def getRecursiveDepPackages(packagename, init=True):
 				if pp not in all_packages: 
 					all_packages.add(pp)
 					newFilesThere = True
+		start_index = len_all_packages # from before the current round
 	return list(all_packages)
     
 
@@ -108,25 +111,50 @@ def outputWgetCommands(urls, filename = ''):
 		f.write('#!/bin/bash -f \n')
 		
 	for u in urls: 
+		if u.find('None')>=0: 
+			continue
 		if filename=='': 
-			print('wget -c %s' % u)
+			print('wget -cnv %s' % u)
 		else: 
-			f.write('wget -c %s\n' % u)
+			f.write('wget -cnv %s\n' % u)
 			
 	if filename != '': 
 		f.close()
 			
 
+def help(): 
+	print('''
+usage: python dlpackages.py packagename
+	Downloads the package 'packagename' and all of its dependencies for 
+	ubuntu (bionic beaver) for amd64 architecture from the website
+	https://packages.ubuntu.com/bionic/... 
+''')
+
 
 def main():    
+	if len(sys.argv)<2: 
+		help()
+		sys.exit(0)
+	if sys.argv[1] in ['-h', '-?', '--help']: 
+		help()
+		sys.exit(0)
+		
 	url1 = getPackageUrl(sys.argv[1])
+	# old version: get only the first level of dependencies: 
 	# packages = getDependentPackages('apache2')
-	packages = getRecursiveDepPackages('apache2')
-	#printdebug(1, packages)
+	packages = getRecursiveDepPackages(sys.argv[1])
+	print('packages to downloda: ', packages)
 	urls = getUrlsOfPackages(packages)
 	urls.append(url1)
-	#printdebug(1, urls)
-	outputWgetCommands(urls, sys.argv[1] + '_dl.sh')
+	print('urls = ', urls)
+	shellfilename = sys.argv[1] + '_dl.sh'
+	outputWgetCommands(urls, shellfilename )
+	print('wget command stored in ', shellfilename)
+	print('executing ', shellfilename)
+	call(['sh', shellfilename])
+	print('finished')
+	
+	
 
 
 if __name__ == '__main__':
